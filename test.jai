@@ -7,6 +7,7 @@
 #run add_test(*TEST_JSON_VALID, "true");
 #run add_test(*TEST_JSON_VALID, "false");
 #run add_test(*TEST_JSON_VALID, "\"\"");
+#run add_test(*TEST_JSON_VALID, "\"\\u0123\"");
 #run add_test(*TEST_JSON_VALID, "[]");
 #run add_test(*TEST_JSON_VALID, "{}");
 #run add_test(*TEST_JSON_VALID, "0");
@@ -19,7 +20,11 @@
 
 #no_reset TEST_JSON_INVALID : [..]Test;
 #run add_test(*TEST_JSON_INVALID, "");
+#run add_test(*TEST_JSON_INVALID, "\"\\\"");
+#run add_test(*TEST_JSON_INVALID, "\"\\z\"");
+#run add_test(*TEST_JSON_INVALID, "\"\\u012\"");
 #run add_test(*TEST_JSON_INVALID, "[0,]");
+#run add_test(*TEST_JSON_INVALID, "[0, [1, [2, [3,]]]]");
 #run add_test(*TEST_JSON_INVALID, "{\"foo\": 0,}");
 #run add_test(*TEST_JSON_INVALID, "01");
 #run add_test(*TEST_JSON_INVALID, "01.1");
