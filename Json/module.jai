@@ -112,7 +112,6 @@ json_parse_value :: (json: string, start_index : int, result: *JsonNode) -> end_
                 return set_error(result, "Expected a value but got some unexpected character.");
         }
     }
-    return set_error(result);
 }
 
 json_parse_number :: (json: string, start_index: int, result: *JsonNode) -> end_index: int {
@@ -187,6 +186,9 @@ json_parse_string :: (json: string, start_index: int) -> end_index: int, result:
             case; // Normal code point
                 i += 1; // @TODO Read bytes as utf8
             case #char "\\"; // Escape character
+                if i + 1 >= json.count {
+                    return -1, "Expected escaped character in string but reached end of json instead.";
+                }
                 if json[i+1] == {
                     case #char "\\"; #through;
                     case #char "\""; #through;
@@ -196,15 +198,18 @@ json_parse_string :: (json: string, start_index: int) -> end_index: int, result:
                     case #char "n";  #through;
                     case #char "r";  #through;
                     case #char "t";
-                        i += 2;
+                        i += 2; // @TODO Parse the escaped character and output it as unescaped?
                     case #char "u";
+                        if i + 5 >= json.count {
+                            return -1, "Expected escaped code point in string but reached end of json instead.";
+                        }
                         if !is_hex(json[i+2]) ||
                            !is_hex(json[i+3]) ||
                            !is_hex(json[i+4]) ||
                            !is_hex(json[i+5]) {
-                            return -1, "Unexpected end of escaped unicode";
+                            return -1, "Unexpected end of escaped code point";
                         }
-                        i += 6;
+                        i += 6; // @TODO Parse the code point and output it as the character?
                     case;
                         return -1, "Unexpected escaped character";
                 }
@@ -215,11 +220,15 @@ json_parse_string :: (json: string, start_index: int) -> end_index: int, result:
                 return i + 1, result;
         }
     }
-    return -1, "wtf?";
+    return -1, "?"; // @TODO This code is supposed to be unreachable! Figure out how to compile without it!
 }
 
 json_parse_object :: (json: string, start_index: int, result: *JsonNode) -> end_index: int {
-    // @LEAK This leaks any assigned members of the object if it fails after assigning them!
+    object_set_error :: (node: *JsonNode, err: string = "") -> int #expand {
+        array_free(node.obj); // Free the node before flagging it as ".ERROR", since we can't free it afterwards!
+        return set_error(node, err);
+    };
+
     #if JSON_DEBUG print("json_parse_object(%);\n", substring(json, start_index));
     result.kind = .OBJECT;
     i := start_index;
@@ -229,23 +238,23 @@ json_parse_object :: (json: string, start_index: int, result: *JsonNode) -> end_
         #if JSON_DEBUG print("LOOP json_parse_object(%);\n", substring(json, i));
         i = eat_white_spaces(json, i);
         if i >= json.count {
-            return set_error(result, "Unexpected end of object!");
+            return object_set_error(result, "Unexpected end of object!");
         }
 
         if json[i] == {
             case #char "\"";
-                if expect_comma return set_error(result, "Expected , or } but got \"");
+                if expect_comma return object_set_error(result, "Expected , or } but got \"");
                 expect_comma = true;
                 trailing_comma = false;
 
                 // Parse key
                 key_end, key := json_parse_string(json, i + 1);
-                if key_end < 0 return set_error(result, key);
+                if key_end < 0 return object_set_error(result, key);
     
                 // Parse colon
                 colon_index := eat_white_spaces(json, key_end);
-                if colon_index >= json.count return set_error(result, "Expected : but end was reached");
-                if json[colon_index] != #char ":" return set_error(result, "Expected : but got another character");
+                if colon_index >= json.count return object_set_error(result, "Expected : but end was reached");
+                if json[colon_index] != #char ":" return object_set_error(result, "Expected : but got another character");
 
                 // Parse value
                 value := New(JsonNode);
@@ -263,22 +272,26 @@ json_parse_object :: (json: string, start_index: int, result: *JsonNode) -> end_
 
                 i = value_end;
             case #char ",";
-                if !expect_comma return set_error(result, "Expected \" or } but got ,");
+                if !expect_comma return object_set_error(result, "Expected \" or } but got ,");
                 expect_comma = false;
                 trailing_comma = true;
                 i += 1;
             case #char "}";
-                if trailing_comma return set_error(result, "Trailing comma in object!");
+                if trailing_comma return object_set_error(result, "Trailing comma in object!");
                 return i + 1;
             case;
-                return set_error(result, "Unexpected character in object!");
+                return object_set_error(result, "Unexpected character in object!");
         }
     }
-    return set_error(result);
+    return object_set_error(result); // @TODO This code is supposed to be unreachable! Figure out how to compile without it!
 }
 
 json_parse_array :: (json: string, start_index: int, result: *JsonNode) -> end_index: int {
-    // @LEAK This leaks any assigned array items if it fails after assigning them!
+    array_set_error :: (node: *JsonNode, err: string = "") -> int #expand {
+        array_free(node.arr); // Free the node before flagging it as ".ERROR", since we can't free it afterwards!
+        return set_error(node, err);
+    };
+
     #if JSON_DEBUG print("json_parse_array(%);\n", substring(json, start_index));
     result.kind = .ARRAY;
     i := start_index;
@@ -288,12 +301,12 @@ json_parse_array :: (json: string, start_index: int, result: *JsonNode) -> end_i
         #if JSON_DEBUG print("LOOP json_parse_array(%);\n", substring(json, i));
         i = eat_white_spaces(json, i);
         if i >= json.count {
-            return set_error(result, "Unexpected end of array!");
+            return array_set_error(result, "Unexpected end of array!");
         }
 
         if json[i] == {
             case;
-                if expect_comma return set_error(result, "Expected , or ] but got some other character");
+                if expect_comma return array_set_error(result, "Expected , or ] but got some other character");
                 trailing_comma = false;
 
                 // Parse value
@@ -308,16 +321,16 @@ json_parse_array :: (json: string, start_index: int, result: *JsonNode) -> end_i
                 i = value_end;
                 expect_comma = true;
             case #char ",";
-                if !expect_comma return set_error(result, "Expected \" or ] but got ,");
+                if !expect_comma return array_set_error(result, "Expected \" or ] but got ,");
                 expect_comma = false;
                 trailing_comma = true;
                 i += 1;
             case #char "]";
-                if trailing_comma return set_error(result, "Trailing comma in array!");
+                if trailing_comma return array_set_error(result, "Trailing comma in array!");
                 return i + 1;
         }
     }
-    return set_error(result);
+    return array_set_error(result); // @TODO This code is supposed to be unreachable! Figure out how to compile without it!
 }
 
 set_error :: (node: *JsonNode, err: string = "") -> int {
@@ -358,7 +371,7 @@ json_build_to_string :: (builder: *String_Builder, node: JsonNode) -> did_error:
             append(builder, tprint("%", node.num_float));
         case .STRING;
             append(builder, "\"");
-            append(builder, node.str);
+            append(builder, node.str); // @TODO Escape the characters in the string? Otherwise stuff like new lines will break it!
             append(builder, "\"");
         case .OBJECT;
             append(builder, "{");

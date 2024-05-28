@@ -8,7 +8,7 @@ Import the library: Copy the `Json` directory to your modules directory.
 
 # TODO
 
-* Fix memory leak when failing during object & array parsing (see @TODO comments in code).
+* Test for memory leaks (and if `json_free` actually works).
 
 * Handle errors better ("bubble" an error code to `json_parse`?)
 
